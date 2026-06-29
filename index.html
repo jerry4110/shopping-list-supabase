@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>쇼핑 리스트</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #1a1a2e;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .input-group input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus {
+      border-color: #4a6cf7;
+    }
+
+    .input-group button {
+      padding: 12px 20px;
+      background: #4a6cf7;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .input-group button:hover {
+      background: #3b5de7;
+    }
+
+    .count {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 12px;
+      text-align: right;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #fff;
+      padding: 14px 16px;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      transition: opacity 0.2s;
+    }
+
+    .item.checked {
+      opacity: 0.55;
+    }
+
+    .item input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: #4a6cf7;
+      flex-shrink: 0;
+    }
+
+    .item-name {
+      flex: 1;
+      font-size: 16px;
+      color: #333;
+      word-break: break-word;
+      transition: text-decoration 0.2s;
+    }
+
+    .item.checked .item-name {
+      text-decoration: line-through;
+      color: #999;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      color: #ccc;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      transition: color 0.2s;
+      flex-shrink: 0;
+    }
+
+    .delete-btn:hover {
+      color: #e74c3c;
+    }
+
+    .empty {
+      text-align: center;
+      color: #aaa;
+      padding: 40px 0;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 쇼핑 리스트</h1>
+
+    <div class="input-group">
+      <input type="text" id="itemInput" placeholder="아이템을 입력하세요">
+      <button onclick="addItem()">추가</button>
+    </div>
+
+    <div class="count" id="count"></div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = 'https://ihfytiaxgurgclsbwknb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImloZnl0aWF4Z3VyZ2Nsc2J3a25iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MDE5MjQsImV4cCI6MjA5ODI3NzkyNH0.cu6jf0ans64q43dIeTMInCKhX0LGnTQpS-DedBbKLZk';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let items = [];
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function render() {
+      const listEl = document.getElementById('list');
+      const countEl = document.getElementById('count');
+
+      if (items.length === 0) {
+        listEl.innerHTML = '<div class="empty">리스트가 비어 있습니다</div>';
+        countEl.textContent = '';
+        return;
+      }
+
+      const checkedCount = items.filter(i => i.checked).length;
+      countEl.textContent = `${checkedCount}/${items.length}개 완료`;
+
+      listEl.innerHTML = items.map(item => `
+        <div class="item ${item.checked ? 'checked' : ''}">
+          <input type="checkbox" ${item.checked ? 'checked' : ''}
+                 onchange="toggleItem(${item.id})">
+          <span class="item-name">${escapeHtml(item.name)}</span>
+          <button class="delete-btn" onclick="deleteItem(${item.id})" title="삭제">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    async function loadItems() {
+      const { data, error } = await supabase
+        .from('shopping_items')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Load error:', error);
+        return;
+      }
+      items = data;
+      render();
+    }
+
+    async function addItem() {
+      const input = document.getElementById('itemInput');
+      const name = input.value.trim();
+      if (!name) return;
+
+      const { error } = await supabase
+        .from('shopping_items')
+        .insert({ name, checked: false });
+
+      if (error) {
+        console.error('Insert error:', error);
+        return;
+      }
+      input.value = '';
+      input.focus();
+      await loadItems();
+    }
+
+    async function toggleItem(id) {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      const { error } = await supabase
+        .from('shopping_items')
+        .update({ checked: !item.checked })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Update error:', error);
+        return;
+      }
+      await loadItems();
+    }
+
+    async function deleteItem(id) {
+      const { error } = await supabase
+        .from('shopping_items')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Delete error:', error);
+        return;
+      }
+      await loadItems();
+    }
+
+    document.getElementById('itemInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addItem();
+    });
+
+    loadItems();
+  </script>
+</body>
+</html>
